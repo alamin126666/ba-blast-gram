@@ -117,17 +117,31 @@ class LiveTelegramService implements TelegramApiService {
     if (!_incomingController.isClosed) _incomingController.add(routed);
   }
 
+  /// Network calls to Telegram must never spin forever: mtflute retries
+  /// internally for up to 2 minutes per call, so without an app-level
+  /// timeout a dead network leaves the login button loading indefinitely
+  /// with no error. 45s per call is enough for a slow first connection
+  /// (auth-key exchange) and still fails fast with a clear message.
+  static Future<T> _withTimeout<T>(Future<T> future) {
+    return future.timeout(
+      const Duration(seconds: 45),
+      onTimeout: () => throw StateError(
+        'Connection timed out — check your internet and try again.',
+      ),
+    );
+  }
+
   // ------------------------------------------------------------------ auth
   @override
   Future<void> sendCode(String phoneNumber) async {
     final client = _ensureClient();
     _phoneNumber = phoneNumber;
-    if (await client.isAuthorized()) {
+    if (await _withTimeout(client.isAuthorized())) {
       _loggedIn = true;
       await _loadMe(client);
       return;
     }
-    final sent = await client.sendCode(phoneNumber);
+    final sent = await _withTimeout(client.sendCode(phoneNumber));
     if (sent is AuthSentCodeObj) {
       _codeHash = sent.phoneCodeHash;
     } else {
@@ -144,7 +158,9 @@ class LiveTelegramService implements TelegramApiService {
       throw StateError('Ask for a code first (enter your phone number).');
     }
     try {
-      await client.signIn(phone: phone, codeHash: codeHash, code: code.trim());
+      await _withTimeout(
+        client.signIn(phone: phone, codeHash: codeHash, code: code.trim()),
+      );
     } on MtpRpcError catch (e) {
       if (e.matches('SESSION_PASSWORD_NEEDED')) {
         throw const NeedsTwoFactorAuth();
@@ -165,7 +181,7 @@ class LiveTelegramService implements TelegramApiService {
   Future<void> signInWithPassword(String password) async {
     final client = _ensureClient();
     try {
-      await client.checkPassword(password);
+      await _withTimeout(client.checkPassword(password));
     } on MtpRpcError catch (e) {
       if (e.matches('PASSWORD_HASH_INVALID')) {
         throw StateError('Wrong 2FA password. Try again.');
