@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:mtflute/mtflute.dart' hide Chat, Contact;
 
 import '../models/models.dart';
@@ -181,7 +182,52 @@ class LiveTelegramService implements TelegramApiService {
   Future<void> signInWithPassword(String password) async {
     final client = _ensureClient();
     try {
-      await _withTimeout(client.checkPassword(password));
+      // Do NOT call client.checkPassword() here: mtflute's SRP step
+      // (PBKDF2-HMAC-SHA512 x100k + 2048-bit modPow, all pure Dart)
+      // runs synchronously on the calling isolate and blocks the UI
+      // thread for tens of seconds, which Android reports as
+      // "BA BLAST GRAM isn't responding" (ANR). Instead, do the two
+      // network calls here and run only the SRP maths in a background
+      // isolate via compute(), keeping the UI responsive.
+      final pwd =
+          await _withTimeout(client.invoke(AccountGetPasswordRequest()))
+              as AccountPasswordObj;
+      final algo = pwd.currentAlgo;
+      if (algo
+          is! PasswordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow) {
+        throw StateError(
+          'Unsupported password algorithm: ${algo.runtimeType}',
+        );
+      }
+      final srpB = pwd.srpB;
+      final srpId = pwd.srpId;
+      if (srpB == null || srpId == null) {
+        throw StateError(
+          'Could not start two-step verification. Try again.',
+        );
+      }
+      final answer = await compute(_srpCheckIsolate, <String, dynamic>{
+        'password': password,
+        'srpB': srpB,
+        'salt1': algo.salt1,
+        'salt2': algo.salt2,
+        'g': algo.g,
+        'p': algo.p,
+      });
+      if (answer == null) {
+        throw StateError('Enter your 2FA password.');
+      }
+      await _withTimeout(
+        client.invoke(
+          AuthCheckPasswordRequest(
+            password: InputCheckPasswordSRPObj(
+              srpId: srpId,
+              A: answer.ga,
+              M1: answer.m1,
+            ),
+          ),
+        ),
+      );
     } on MtpRpcError catch (e) {
       if (e.matches('PASSWORD_HASH_INVALID')) {
         throw StateError('Wrong 2FA password. Try again.');
@@ -779,4 +825,18 @@ extension _ChatMessageChat on ChatMessage {
       edited: edited,
     );
   }
+}
+
+/// Runs mtflute's SRP maths in a background isolate. Must be a top-level
+/// function for [compute]. Takes only plain transferable values (String,
+/// Uint8List, int) and returns the SRP answer (two Uint8Lists).
+SrpAnswer? _srpCheckIsolate(Map<String, dynamic> args) {
+  return computeSrpCheck(
+    password: args['password'] as String,
+    srpB: args['srpB'] as Uint8List,
+    salt1: args['salt1'] as Uint8List,
+    salt2: args['salt2'] as Uint8List,
+    g: args['g'] as int,
+    p: args['p'] as Uint8List,
+  );
 }
