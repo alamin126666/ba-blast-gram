@@ -1,0 +1,40 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore Android binary assets (icons + Gradle wrapper jar)
+        run: |
+          for d in hdpi mdpi xhdpi xxhdpi xxxhdpi; do
+            base64 -d "scripts/android-assets/ic_launcher-$d.png.b64" > "android/app/src/main/res/mipmap-$d/ic_launcher.png"
+          done
+          curl -L -o android/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v9.3.1/gradle/wrapper/gradle-wrapper.jar
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      # NOTE: pipeline test build — api_id/api_hash placeholders (api_id=0).
+      # Final build will inject the owner's real keys from GitHub Secrets first.
+      - run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ba-blast-gram-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
