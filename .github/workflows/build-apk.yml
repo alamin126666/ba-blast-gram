@@ -14,8 +14,10 @@ jobs:
       - name: Restore Android binary assets (icons + Gradle wrapper jar)
         run: |
           for d in hdpi mdpi xhdpi xxhdpi xxxhdpi; do
+            mkdir -p "android/app/src/main/res/mipmap-$d"
             base64 -d "scripts/android-assets/ic_launcher-$d.png.b64" > "android/app/src/main/res/mipmap-$d/ic_launcher.png"
           done
+          mkdir -p android/gradle/wrapper
           curl -L -o android/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v9.3.1/gradle/wrapper/gradle-wrapper.jar
 
       - uses: actions/setup-java@v4
