@@ -240,7 +240,9 @@ class LiveTelegramService implements TelegramApiService {
 
   Future<void> _loadMe(MtpClient client) async {
     try {
-      final me = await client.getMe();
+      // Timed out like the auth calls: a hanging getMe must not leave
+      // the 2FA screen spinning forever. Still best-effort.
+      final me = await _withTimeout(client.getMe());
       if (me is UserObj) _myUserId = me.id;
     } catch (_) {
       // Profile loading is best-effort; login already succeeded.
@@ -268,7 +270,7 @@ class LiveTelegramService implements TelegramApiService {
   Future<List<Chat>> fetchChats() async {
     await _requireAuth();
     final client = _ensureClient();
-    final result = await client.getDialogs(limit: 100);
+    final result = await _withTimeout(client.getDialogs(limit: 100));
     final List<Dialog> dialogs;
     final List<Message> messages;
     // mtflute's Chat is hidden (it clashes with the app's Chat model),
@@ -545,7 +547,7 @@ class LiveTelegramService implements TelegramApiService {
   Future<UserProfile?> fetchMe() async {
     await _requireAuth();
     final client = _ensureClient();
-    final me = await client.getMe();
+    final me = await _withTimeout(client.getMe());
     if (me is! UserObj) return null;
     _myUserId = me.id;
     return UserProfile(
@@ -566,7 +568,7 @@ class LiveTelegramService implements TelegramApiService {
     final client = _ensureClient();
     // No dedicated contacts helper in mtflute 0.2.9 — contacts are the
     // real users from the dialog list (people you actually chat with).
-    final result = await client.getDialogs(limit: 100);
+    final result = await _withTimeout(client.getDialogs(limit: 100));
     final List<User> users;
     if (result is MessagesDialogsObj) {
       users = result.users;

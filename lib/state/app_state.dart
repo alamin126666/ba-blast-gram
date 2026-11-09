@@ -219,10 +219,14 @@ class AppState extends ChangeNotifier {
   Future<void> _completeLogin() async {
     _authStep = AuthStep.loggedIn;
     await _prefs?.setBool(_kLoggedIn, true);
-    await refreshMe();
-    await loadChats();
-    await loadContacts();
-    await loadStories();
+    // Navigate to home NOW. The chat/profile loads run in the background
+    // (home shows its own loading state) so a slow first sync can never
+    // leave the user staring at the 2FA spinner with no error.
+    notifyListeners();
+    unawaited(refreshMe());
+    unawaited(loadChats());
+    unawaited(loadContacts());
+    unawaited(loadStories());
     _subscribeIncoming();
   }
 
