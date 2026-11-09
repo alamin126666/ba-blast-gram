@@ -1,0 +1,39 @@
+name: blastgram
+description: "BA BLAST GRAM — a premium Telegram-style messenger built with Flutter & Dart. Real Telegram only: the owner's api_id/api_hash are stored encrypted in the native library; end users log in with phone + OTP."
+# Prevent accidental publishing to pub.dev.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management (single, consistent choice across the app).
+  provider: ^6.1.5
+
+  # Local persistence: theme, session, profile.
+  shared_preferences: ^2.5.3
+  path_provider: ^2.1.5
+
+  # Date / time formatting for chat timestamps.
+  intl: ^0.20.2
+
+  # Pure-Dart Telegram MTProto client (API layer 228, no native libs).
+  # Used ONLY on mobile/desktop through a conditional import
+  # (see lib/services/live_telegram_service.dart) so `flutter build web`
+  # keeps working — mtflute is dart:io based and has no web target.
+  # Real Telegram via the pure-Dart mtflute MTProto client (API layer 228).
+  # Owner API keys live in the encrypted native store, never in Dart code.
+  mtflute: ^0.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
